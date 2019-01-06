@@ -317,6 +317,7 @@ dependencies = [
  "listenfd 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "mailin-embedded 0.2.1",
+ "mxdns 0.1.0",
  "simplelog 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

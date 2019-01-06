@@ -24,7 +24,6 @@
 mod err;
 
 use crate::err::Error;
-use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::str::FromStr;
 use tokio::prelude::Future;
@@ -35,6 +34,7 @@ use trust_dns::rr::{DNSClass, Name, RData, RecordType};
 use trust_dns::udp::UdpClientStream;
 
 /// Utilities for looking up IP addresses on blocklists and doing reverse DNS
+#[derive(Clone)]
 pub struct MxDns {
     bootstrap: SocketAddr,
     blocklists: Vec<String>,
@@ -42,24 +42,19 @@ pub struct MxDns {
 
 impl MxDns {
     /// Create a MxDns that uses the given DNS server for standard queries.
-    pub fn new<A, I>(bootstrap_dns: A, blocklists_fqdn: I) -> io::Result<Self>
+    pub fn new<I, S>(bootstrap_dns: I, blocklists_fqdn: S) -> Self
     where
-        A: ToSocketAddrs,
-        I: IntoIterator,
-        I::Item: Into<String>,
+        I: Into<IpAddr>,
+        S: IntoIterator,
+        S::Item: Into<String>,
     {
-        let bootstrap = bootstrap_dns
-            .to_socket_addrs()?
-            .map(|i| i.clone())
-            .nth(0)
-            .ok_or_else(|| {
-                io::Error::new(io::ErrorKind::InvalidInput, "Bad bootstrap dns address")
-            })?;
+        let ip = bootstrap_dns.into();
+        let bootstrap = SocketAddr::new(ip, 53);
         let blocklists: Vec<String> = blocklists_fqdn.into_iter().map(|i| i.into()).collect();
-        Ok(Self {
+        Self {
             bootstrap,
             blocklists,
-        })
+        }
     }
 
     /// Queries blocklists for the given address
@@ -131,7 +126,7 @@ impl MxDns {
         A: Into<IpAddr>,
     {
         let mut res = self.on_blocklists(addr);
-        if res.iter().all(|r| r.is_err()) {
+        if !res.is_empty() && res.iter().all(|r| r.is_err()) {
             res.pop().unwrap()
         } else {
             Ok(res.into_iter().any(|r| r.unwrap_or(false)))
@@ -153,6 +148,27 @@ impl MxDns {
             .map(|o| o.map(|name| name.to_utf8()))
             .map_err(|err| err.into())
     }
+
+    /// Does a Forward Confirmed Reverse DNS check on the given ip address
+    /// This checks that the reverse lookup on the ip address gives a domain
+    /// name that will resolve to the original ip address.
+    pub fn fcrdns<A>(&self, ip: A) -> Result<bool, Error>
+    where
+        A: Into<IpAddr>,
+    {
+        let ipaddr = ip.into();
+        let fqdn = match self.reverse_dns(ipaddr.clone())? {
+            None => return Ok(false),
+            Some(s) => s,
+        };
+        let (task, client) = connect_client(self.bootstrap);
+        let mut runtime = Runtime::new().unwrap();
+        runtime.spawn(task);
+        let confirmed = lookup_ip(client, &fqdn);
+        runtime
+            .block_on(confirmed)
+            .map(|maybe_ip| maybe_ip.filter(|c| c == &ipaddr).is_some())
+    }
 }
 
 // Lookup the nameserver that handles the given fqdn
@@ -160,7 +176,7 @@ fn lookup_ns(
     mut client: BasicClientHandle<DnsMultiplexerSerialResponse>,
     fqdn: &str,
 ) -> impl Future<Item = Option<String>, Error = Error> {
-    let name = Name::from_str(fqdn).unwrap();
+    let name = Name::from_str(fqdn).unwrap(); // TODO: remove unwrap
     let query = client.query(name, DNSClass::IN, RecordType::NS);
     query
         .map(|response| {
@@ -181,7 +197,7 @@ fn lookup_ip(
     mut client: BasicClientHandle<DnsMultiplexerSerialResponse>,
     fqdn: &str,
 ) -> impl Future<Item = Option<IpAddr>, Error = Error> {
-    let name = Name::from_str(fqdn).unwrap();
+    let name = Name::from_str(fqdn).unwrap(); // TODO: remove unwrap
     let query = client.query(name, DNSClass::IN, RecordType::A);
     query
         .map(|response| {
@@ -199,7 +215,7 @@ fn lookup_ptr(
     client: &mut BasicClientHandle<DnsMultiplexerSerialResponse>,
     fqdn: &str,
 ) -> impl Future<Item = Option<Name>, Error = Error> {
-    let name = Name::from_str(fqdn).unwrap();
+    let name = Name::from_str(fqdn).unwrap(); // TODO: remove unwrap
     let query = client.query(name, DNSClass::IN, RecordType::PTR);
     query
         .map(|response| {
@@ -264,12 +280,21 @@ mod tests {
     }
 
     fn build_mx_dns() -> MxDns {
-        let bootstrap = "8.8.8.8:53";
+        let bootstrap: IpAddr = "8.8.8.8".parse().unwrap();
         let blocklists = blocklists()
             .iter()
             .map(|t| t.0)
             .collect::<Vec<&'static str>>();
-        MxDns::new(bootstrap, blocklists).unwrap()
+        MxDns::new(bootstrap, blocklists)
+    }
+
+    #[test]
+    fn empty_blocklists() {
+        let bootstrap: IpAddr = "8.8.8.8".parse().unwrap();
+        let empty: Vec<String> = Vec::new();
+        let mxdns = MxDns::new(bootstrap, empty);
+        let blocked = mxdns.is_blocked(Ipv4Addr::new(127, 0, 0, 2)).unwrap();
+        assert_eq!(blocked, false);
     }
 
     #[cfg_attr(feature = "no-network-tests", ignore)]
@@ -325,4 +350,20 @@ mod tests {
         let reverse = mxdns.reverse_dns(addr).unwrap().unwrap();
         assert_eq!(reverse, "mail.alienscience.org.uk.");
     }
+
+    #[cfg_attr(feature = "no-network-tests", ignore)]
+    #[test]
+    fn fcrdns_ok() {
+        let mxdns = build_mx_dns();
+        assert!(mxdns.fcrdns([88, 198, 127, 200]).unwrap());
+    }
+
+    #[cfg_attr(feature = "no-network-tests", ignore)]
+    #[test]
+    fn fcrdns_fail() {
+        let mxdns = build_mx_dns();
+        // 127.0.0.2 -> localhost -> 127.0.0.1
+        assert!(!mxdns.fcrdns([127, 0, 0, 2]).unwrap());
+    }
+
 }
