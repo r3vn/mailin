@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn not_blocked() {
         let mxdns = build_mx_dns();
-        let blocked = mxdns.is_blocked(Ipv4Addr::new(127, 0, 0, 1)).unwrap();
+        let blocked = mxdns.is_blocked([127, 0, 0, 1]).unwrap();
         assert_eq!(blocked, false);
     }
 
@@ -328,7 +328,7 @@ mod tests {
     #[test]
     fn blocked() {
         let mxdns = build_mx_dns();
-        let blocked = mxdns.is_blocked(Ipv4Addr::new(127, 0, 0, 2)).unwrap();
+        let blocked = mxdns.is_blocked([127, 0, 0, 2]).unwrap();
         assert_eq!(blocked, true);
     }
 
