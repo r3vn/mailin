@@ -1,6 +1,7 @@
 //! DNS utilities for email servers.
 //!
 //! Currently, DNS based blocklists and reverse DNS lookups are supported.
+//! The crate also supports forward confirmed reverse dns checks.
 //!
 //! # Examples
 //! ```no_run
@@ -16,6 +17,9 @@
 //! // Reverse lookup a DNS address
 //! let rdns = mxdns.reverse_dns([193, 25, 101, 5]).unwrap().unwrap();
 //! assert_eq!(rdns, "mail.alienscience.org.");
+//!
+//! // Check that the ip resolved from the name obtained by the reverse dns matches the ip
+//! assert!(mxdns.fcrdns([193, 25, 101, 5]).unwrap());
 //! ```
 
 mod err;
