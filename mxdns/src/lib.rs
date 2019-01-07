@@ -5,25 +5,25 @@
 //! # Examples
 //! ```no_run
 //! use mxdns::MxDns;
-//! use std::net::Ipv4Addr;
 //!
-//! // Use Google DNS servers to lookup DNS blocklist servers and for reverse DNS
-//! let google_dns = [8, 8, 8, 8];
 //! let blocklists = vec!["zen.spamhaus.org.","dnsbl-1.uceprotect.net."];
-//! let mxdns = MxDns::new(google_dns, blocklists);
+//! let mxdns = MxDns::new(blocklists).unwrap();
 //!
 //! // Check if an IP Address is present on blocklists
-//! let is_blocked = mxdns.is_blocked(Ipv4Addr::new(127, 0, 0, 2)).unwrap();
+//! let is_blocked = mxdns.is_blocked([127, 0, 0, 2]).unwrap();
 //! assert!(is_blocked);
 //!
 //! // Reverse lookup a DNS address
-//! let rdns = mxdns.reverse_dns(Ipv4Addr::new(193, 25, 101, 5)).unwrap().unwrap();
+//! let rdns = mxdns.reverse_dns([193, 25, 101, 5]).unwrap().unwrap();
 //! assert_eq!(rdns, "mail.alienscience.org.");
 //! ```
 
 mod err;
 
 use crate::err::Error;
+use resolv_conf;
+use std::fs::File;
+use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::str::FromStr;
 use tokio::prelude::Future;
@@ -33,6 +33,8 @@ use trust_dns::proto::xfer::DnsMultiplexerSerialResponse;
 use trust_dns::rr::{DNSClass, Name, RData, RecordType};
 use trust_dns::udp::UdpClientStream;
 
+const RESOLV_CONF: &str = "/etc/resolv.conf";
+
 /// Utilities for looking up IP addresses on blocklists and doing reverse DNS
 #[derive(Clone)]
 pub struct MxDns {
@@ -41,8 +43,30 @@ pub struct MxDns {
 }
 
 impl MxDns {
+    /// Create a MxDns using the system provided nameserver config
+    pub fn new<S>(blocklists_fqdn: S) -> Result<Self, Error>
+    where
+        S: IntoIterator,
+        S::Item: Into<String>,
+    {
+        let mut buf = Vec::with_capacity(256);
+        let mut file = File::open(RESOLV_CONF)?;
+        file.read_to_end(&mut buf)?;
+        let conf = resolv_conf::Config::parse(&buf)?;
+        let nameservers = conf.get_nameservers_or_local();
+        if let Some(ip) = nameservers.first() {
+            let ip_addr: IpAddr = ip.into();
+            Ok(Self::with_dns(ip_addr, blocklists_fqdn))
+        } else {
+            Err(Error::new(format!(
+                "No nameservers found in {}",
+                RESOLV_CONF
+            )))
+        }
+    }
+
     /// Create a MxDns that uses the given DNS server for standard queries.
-    pub fn new<I, S>(bootstrap_dns: I, blocklists_fqdn: S) -> Self
+    pub fn with_dns<I, S>(bootstrap_dns: I, blocklists_fqdn: S) -> Self
     where
         I: Into<IpAddr>,
         S: IntoIterator,
@@ -285,14 +309,14 @@ mod tests {
             .iter()
             .map(|t| t.0)
             .collect::<Vec<&'static str>>();
-        MxDns::new(bootstrap, blocklists)
+        MxDns::with_dns(bootstrap, blocklists)
     }
 
     #[test]
     fn empty_blocklists() {
         let bootstrap: IpAddr = "8.8.8.8".parse().unwrap();
         let empty: Vec<String> = Vec::new();
-        let mxdns = MxDns::new(bootstrap, empty);
+        let mxdns = MxDns::with_dns(bootstrap, empty);
         let blocked = mxdns.is_blocked(Ipv4Addr::new(127, 0, 0, 2)).unwrap();
         assert_eq!(blocked, false);
     }

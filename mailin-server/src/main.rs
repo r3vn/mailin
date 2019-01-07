@@ -121,9 +121,8 @@ fn main() -> Result<(), Error> {
         .opt_str(OPT_SERVER)
         .unwrap_or_else(|| DOMAIN.to_owned());
     let blocklists = matches.opt_strs(OPT_BLOCKLIST);
-    let handler = Handler {
-        mxdns: MxDns::new([8, 8, 8, 8], blocklists),
-    };
+    let mxdns = MxDns::new(blocklists).map_err(|e| format_err!("{}", e))?;
+    let handler = Handler { mxdns };
     let mut server = Server::new(handler);
     server.with_name(domain).with_ssl(ssl_config);
     if matches.opt_present(OPT_SOCKET_ACTIVATION) {
