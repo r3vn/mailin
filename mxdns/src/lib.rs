@@ -8,9 +8,9 @@
 //! use std::net::Ipv4Addr;
 //!
 //! // Use Google DNS servers to lookup DNS blocklist servers and for reverse DNS
-//! let google_dns = "8.8.8.8:53";
+//! let google_dns = [8, 8, 8, 8];
 //! let blocklists = vec!["zen.spamhaus.org.","dnsbl-1.uceprotect.net."];
-//! let mxdns = MxDns::new(google_dns, blocklists).unwrap();
+//! let mxdns = MxDns::new(google_dns, blocklists);
 //!
 //! // Check if an IP Address is present on blocklists
 //! let is_blocked = mxdns.is_blocked(Ipv4Addr::new(127, 0, 0, 2)).unwrap();
