@@ -3,7 +3,7 @@ use failure::{bail, format_err, Error};
 use getopts::Options;
 use listenfd::ListenFd;
 use mailin_embedded::{HeloResult, Server, SslConfig};
-use mxdns::MxDns;
+use mxdns::{FCrDNS, MxDns};
 use simplelog::{
     CombinedLogger, Config, Level, LevelFilter, SharedLogger, SimpleLogger, TermLogger, WriteLogger,
 };
@@ -34,12 +34,17 @@ struct Handler {
 impl mailin_embedded::Handler for Handler {
     fn helo(&mut self, ip: IpAddr, _domain: &str) -> HeloResult {
         // Does the reverse DNS match the forward dns?
-        if !self.mxdns.fcrdns(ip).unwrap_or(true) {
-            return HeloResult::BadHelo;
-        } else if self.mxdns.is_blocked(ip).unwrap_or(false) {
-            return HeloResult::BlockedIp;
+        let rdns = self.mxdns.fcrdns(ip);
+        match rdns {
+            Ok(FCrDNS::NoReverse) | Ok(FCrDNS::UnConfirmed(_)) => HeloResult::BadHelo,
+            _ => {
+                if self.mxdns.is_blocked(ip).unwrap_or(false) {
+                    HeloResult::BlockedIp
+                } else {
+                    HeloResult::Ok
+                }
+            }
         }
-        HeloResult::Ok
     }
 }
 
