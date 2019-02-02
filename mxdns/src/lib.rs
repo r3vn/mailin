@@ -64,6 +64,16 @@ pub enum FCrDNS {
     Confirmed(String),
 }
 
+impl FCrDNS {
+    /// Is the result a confirmed reverse dns value?
+    pub fn is_confirmed(&self) -> bool {
+        match &self {
+            FCrDNS::Confirmed(_) => true,
+            _ => false,
+        }
+    }
+}
+
 impl MxDns {
     /// Create a MxDns using the system provided nameserver config
     pub fn new<S>(blocklists_fqdn: S) -> Result<Self, Error>
