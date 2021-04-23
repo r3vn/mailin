@@ -31,6 +31,7 @@
 #![forbid(missing_docs)]
 
 mod err;
+mod resolve;
 
 use crate::err::Error;
 use log::Level::Debug;

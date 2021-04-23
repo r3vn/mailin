@@ -12,6 +12,8 @@ license = "MIT OR Apache-2.0"
 edition = "2018"
 
 [dependencies]
+thiserror = "1"
+dnssector = "0.2"
 trust-dns = "0.17"
 tokio = "0.1"
 tokio-udp = "0.1"

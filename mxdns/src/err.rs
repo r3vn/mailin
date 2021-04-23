@@ -3,6 +3,18 @@ use std::fmt;
 use std::io;
 use trust_dns::error::ClientError;
 
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("{0} - bad dns query {1}")]
+    DnsQuery(&'static str, String),
+    #[error("{0} - response packet has no answer")]
+    EmptyResponse(&'static str),
+}
+
+/*
+// TODO: thiserror
 #[derive(Debug)]
 pub struct Error {
     original: Option<Box<dyn std::error::Error>>,
@@ -58,3 +70,4 @@ impl fmt::Display for Error {
         write!(f, "{}", self.msg)
     }
 }
+*/
