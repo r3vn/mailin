@@ -11,6 +11,8 @@ pub enum Error {
     DnsQuery(&'static str, String),
     #[error("{0} - response packet has no answer")]
     EmptyResponse(&'static str),
+    #[error("{0} - extract ips")]
+    ExtractIps(String, #[source] dnssector::Error),
 }
 
 /*
