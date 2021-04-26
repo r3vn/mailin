@@ -8,7 +8,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("{0} - bad dns query {1}")]
-    DnsQuery(&'static str, String),
+    DnsQuery(String, #[source] dnssector::Error),
     #[error("{0} - response packet has no answer")]
     EmptyResponse(&'static str),
     #[error("{0} - extract ips")]

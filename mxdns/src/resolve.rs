@@ -3,21 +3,29 @@ use dnssector::{
     constants::{Class, Type},
     DNSIterable, ParsedPacket, RdataIterable,
 };
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 
-pub struct Resolve {}
+const DNS_PORT: u16 = 53;
+
+pub struct Resolve {
+    dns_server: SocketAddr,
+}
 
 impl Resolve {
+    fn with_server<T: Into<IpAddr>>(ip: T) -> Self {
+        let addr = SocketAddr::new(ip.into(), DNS_PORT);
+        Self { dns_server: addr }
+    }
+
     fn query(&self, packet: ParsedPacket) -> Result<ParsedPacket> {
         todo!()
     }
 
     fn query_a(&self, name: &[u8]) -> Result<Vec<IpAddr>> {
         let query = dnssector::gen::query(name, Type::A, Class::IN)
-            .map_err(|e| Error::DnsQuery("query A", format!("{}", e)))?;
+            .map_err(|e| Error::DnsQuery(String::from_utf8_lossy(name).to_string(), e))?;
         let response = self.query(query)?;
-        let ips = extract_ips(response, name)?;
-        todo!()
+        extract_ips(response, name)
     }
 }
 
