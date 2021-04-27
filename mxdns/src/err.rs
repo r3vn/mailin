@@ -12,6 +12,14 @@ pub enum Error {
     EmptyResponse(&'static str),
     #[error("{0} - extract ips")]
     ExtractIps(String, #[source] dnssector::Error),
+    #[error("query - udp bind")]
+    Bind(#[source] io::Error),
+    #[error("query - udp connect")]
+    Connect(#[source] io::Error),
+    #[error("query - udp send")]
+    Send(#[source] io::Error),
+    #[error("query - receive dns response")]
+    Recv(#[source] io::Error),
 }
 
 /*

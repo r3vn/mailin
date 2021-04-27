@@ -1,11 +1,13 @@
 use crate::err::{Error, Result};
+use async_net::UdpSocket;
 use dnssector::{
-    constants::{Class, Type},
-    DNSIterable, ParsedPacket, RdataIterable,
+    constants::{Class, Type, DNS_MAX_COMPRESSED_SIZE},
+    DNSIterable, DNSSector, ParsedPacket, RdataIterable,
 };
 use std::net::{IpAddr, SocketAddr};
 
 const DNS_PORT: u16 = 53;
+const SOURCE_ADDR: &str = "0.0.0.0:0";
 
 pub struct Resolve {
     dns_server: SocketAddr,
@@ -17,15 +19,29 @@ impl Resolve {
         Self { dns_server: addr }
     }
 
-    fn query(&self, packet: ParsedPacket) -> Result<ParsedPacket> {
+    // TODO: move packet handling to another function and make this a standalone function
+    //       that operates on buffers.
+    async fn query(&self, packet: ParsedPacket) -> Result<ParsedPacket> {
         let raw_packet = packet.into_packet();
+        let socket = UdpSocket::bind(SOURCE_ADDR).await.map_err(Error::Bind)?;
+        socket
+            .connect(self.dns_server)
+            .await
+            .map_err(Error::Connect)?;
+        // TODO: timeout
+        socket.send(&raw_packet).await.map_err(Error::Send)?;
+        let mut response = vec![0; DNS_MAX_COMPRESSED_SIZE];
+        let len = socket.recv(&mut response).await.map_err(Error::Recv)?;
+        response.truncate(len);
+        // TODO: move this
+        let response = DNSSector::new(response);
         todo!()
     }
 
-    fn query_a(&self, name: &[u8]) -> Result<Vec<IpAddr>> {
+    async fn query_a(&self, name: &[u8]) -> Result<Vec<IpAddr>> {
         let query = dnssector::gen::query(name, Type::A, Class::IN)
             .map_err(|e| Error::DnsQuery(String::from_utf8_lossy(name).to_string(), e))?;
-        let response = self.query(query)?;
+        let response = self.query(query).await?;
         extract_ips(response, name)
     }
 }
