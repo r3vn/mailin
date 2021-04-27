@@ -14,13 +14,11 @@ edition = "2018"
 [dependencies]
 thiserror = "1"
 dnssector = "0.2"
-trust-dns = "0.17"
-tokio = "0.1"
-tokio-udp = "0.1"
 resolv-conf = "0.7"
 log = "0.4"
 
 [features]
+# TODO: fix this
 # Some tests use DNS blocklists servers over the internet.
 # Set this feature to turn off the tests that require network access.
 no-network-tests = []

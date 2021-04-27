@@ -18,6 +18,7 @@ impl Resolve {
     }
 
     fn query(&self, packet: ParsedPacket) -> Result<ParsedPacket> {
+        let raw_packet = packet.into_packet();
         todo!()
     }
 
@@ -29,21 +30,22 @@ impl Resolve {
     }
 }
 
-// TODO: return an error
-fn extract_ips(packet: ParsedPacket, query_name: &[u8]) -> Result<Vec<IpAddr>> {
+fn extract_ips(mut packet: ParsedPacket, query_name: &[u8]) -> Result<Vec<IpAddr>> {
+    use std::result::Result as StdResult;
+
     let mut ips = Vec::new();
     let mut response = packet.into_iter_answer();
     while let Some(i) = response {
         ips.push(i.rr_ip());
         response = i.next();
     }
-    let (ips, errors): (Vec<_>, Vec<_>) = ips.into_iter().partition(std::result::Result::is_ok);
+    let (ips, errors): (Vec<_>, Vec<_>) = ips.into_iter().partition(StdResult::is_ok);
     if ips.is_empty() {
-        if let Some(Err(e)) = errors.first() {
+        if let Some(Err(e)) = errors.into_iter().nth(0) {
             let query = String::from_utf8_lossy(query_name).to_string();
-            return Err(Error::ExtractIps(query, *e));
+            return Err(Error::ExtractIps(query, e));
         }
     }
-    let ips: Vec<_> = ips.into_iter().map(|r| r.unwrap()).collect();
+    let ips: Vec<_> = ips.into_iter().map(StdResult::unwrap).collect();
     Ok(ips)
 }

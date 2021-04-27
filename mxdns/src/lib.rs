@@ -33,6 +33,7 @@
 mod err;
 mod resolve;
 
+/*
 use crate::err::Error;
 use log::Level::Debug;
 use log::{debug, log_enabled};
@@ -464,3 +465,4 @@ mod tests {
         );
     }
 }
+*/

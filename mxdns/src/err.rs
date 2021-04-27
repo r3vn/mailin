@@ -1,7 +1,6 @@
 use resolv_conf::ParseError;
 use std::fmt;
 use std::io;
-use trust_dns::error::ClientError;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
