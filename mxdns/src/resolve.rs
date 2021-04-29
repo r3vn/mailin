@@ -1,13 +1,10 @@
 use crate::err::{Error, Result};
-use async_net::UdpSocket;
 use dnssector::{
     constants::{Class, Type, DNS_MAX_COMPRESSED_SIZE},
     DNSIterable, DNSSector, ParsedPacket, RdataIterable, DNS_FLAG_TC,
 };
-use std::{
-    net::{IpAddr, SocketAddr},
-    os::linux::raw,
-};
+use smol::net::UdpSocket;
+use std::net::{IpAddr, SocketAddr};
 
 const DNS_PORT: u16 = 53;
 const SOURCE_ADDR: &str = "0.0.0.0:0";
@@ -88,4 +85,24 @@ fn extract_ips(mut packet: ParsedPacket, query_name: &[u8]) -> Result<Vec<IpAddr
 
 fn query_string(query: &[u8]) -> String {
     String::from_utf8_lossy(query).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::IpAddr;
+
+    #[test]
+    fn query_google() {
+        let server: IpAddr = "8.8.8.8".parse().unwrap();
+        let resolve = Resolve::with_server(server);
+        // TODO: move non-async code out of block
+        smol::block_on(async {
+            let addresses = resolve.query_a(b"mail.alienscience.org").await.unwrap();
+            let expected: IpAddr = "116.203.10.186".parse().unwrap();
+            let found = addresses.into_iter().any(|ip| ip == expected);
+            // TODO: better error message
+            assert!(found)
+        })
+    }
 }

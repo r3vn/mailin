@@ -16,7 +16,7 @@ thiserror = "1"
 dnssector = "0.2"
 resolv-conf = "0.7"
 log = "0.4"
-async-net = "1.2.5"
+smol = "1.2.5"
 
 [features]
 # TODO: fix this

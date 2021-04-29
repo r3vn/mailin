@@ -1,3 +1,4 @@
+/*
 //! DNS utilities for email servers.
 //!
 //! Currently, DNS based blocklists and reverse DNS lookups are supported.
@@ -29,7 +30,7 @@
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
-
+*/
 mod err;
 mod resolve;
 
