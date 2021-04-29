@@ -14,12 +14,16 @@ pub enum Error {
     ExtractIps(String, #[source] dnssector::Error),
     #[error("query - udp bind")]
     Bind(#[source] io::Error),
-    #[error("query - udp connect")]
-    Connect(#[source] io::Error),
-    #[error("query - udp send")]
-    Send(#[source] io::Error),
-    #[error("query - receive dns response")]
-    Recv(#[source] io::Error),
+    #[error("query - udp connect to {0}")]
+    Connect(String, #[source] io::Error),
+    #[error("query - udp send to {0}")]
+    Send(String, #[source] io::Error),
+    #[error("query - receive dns response from {0}")]
+    Recv(String, #[source] io::Error),
+    #[error("{0} - cannot parse dns response")]
+    ParseResponse(String, #[source] dnssector::Error),
+    #[error("{0} - {1} requires TCP which is unsupported")]
+    TcpUnsupported(String, String),
 }
 
 /*
