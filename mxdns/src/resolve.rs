@@ -14,7 +14,7 @@ pub struct Resolve {
 }
 
 impl Resolve {
-    fn with_server<T: Into<IpAddr>>(ip: T) -> Self {
+    pub fn with_server<T: Into<IpAddr>>(ip: T) -> Self {
         let addr = SocketAddr::new(ip.into(), DNS_PORT);
         Self { dns_server: addr }
     }
@@ -55,7 +55,7 @@ impl Resolve {
         Ok(response)
     }
 
-    async fn query_a(&self, name: &[u8]) -> Result<Vec<IpAddr>> {
+    pub async fn query_a(&self, name: &[u8]) -> Result<Vec<IpAddr>> {
         let query = dnssector::gen::query(name, Type::A, Class::IN)
             .map_err(|e| Error::DnsQuery(query_string(name), e))?;
         let response = self.query(query, name).await?;
