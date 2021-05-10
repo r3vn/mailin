@@ -656,6 +656,7 @@ dependencies = [
 name = "mxdns"
 version = "0.2.2"
 dependencies = [
+ "display_bytes",
  "dnssector",
  "log",
  "resolv-conf",

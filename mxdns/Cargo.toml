@@ -18,6 +18,9 @@ resolv-conf = "0.7"
 log = "0.4"
 smol = "1.2.5"
 
+[dev-dependencies]
+display_bytes = "0.2"
+
 [features]
 # TODO: fix this
 # Some tests use DNS blocklists servers over the internet.

@@ -90,19 +90,22 @@ fn query_string(query: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use display_bytes::display_bytes;
     use std::net::IpAddr;
 
     #[test]
     fn query_google() {
         let server: IpAddr = "8.8.8.8".parse().unwrap();
         let resolve = Resolve::with_server(server);
-        // TODO: move non-async code out of block
-        smol::block_on(async {
-            let addresses = resolve.query_a(b"mail.alienscience.org").await.unwrap();
-            let expected: IpAddr = "116.203.10.186".parse().unwrap();
-            let found = addresses.into_iter().any(|ip| ip == expected);
-            // TODO: better error message
-            assert!(found)
-        })
+        let query = b"mail.alienscience.org";
+        let expected: IpAddr = "116.203.10.186".parse().unwrap();
+        let addresses = smol::block_on(async { resolve.query_a(query).await.unwrap() });
+        let found = addresses.into_iter().any(|ip| ip == expected);
+        assert!(
+            found,
+            "{} did not resolve to {}",
+            display_bytes(query),
+            expected
+        );
     }
 }
