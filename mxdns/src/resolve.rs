@@ -3,20 +3,28 @@ use dnssector::{
     constants::{Class, Type, DNS_MAX_COMPRESSED_SIZE},
     DNSIterable, DNSSector, ParsedPacket, RdataIterable, DNS_FLAG_TC,
 };
-use smol::net::UdpSocket;
-use std::net::{IpAddr, SocketAddr};
+use smol::{future::FutureExt, net::UdpSocket, Timer};
+use std::{
+    io::{self, ErrorKind::TimedOut},
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 
 const DNS_PORT: u16 = 53;
 const SOURCE_ADDR: &str = "0.0.0.0:0";
 
 pub struct Resolve {
     dns_server: SocketAddr,
+    timeout: Duration,
 }
 
 impl Resolve {
-    pub fn with_server<T: Into<IpAddr>>(ip: T) -> Self {
-        let addr = SocketAddr::new(ip.into(), DNS_PORT);
-        Self { dns_server: addr }
+    pub fn new<T: Into<IpAddr>>(dns_server_ip: T, timeout: Duration) -> Self {
+        let addr = SocketAddr::new(dns_server_ip.into(), DNS_PORT);
+        Self {
+            dns_server: addr,
+            timeout,
+        }
     }
 
     async fn query(&self, packet: ParsedPacket, name: &[u8]) -> Result<ParsedPacket> {
@@ -49,10 +57,16 @@ impl Resolve {
         let mut response = vec![0; DNS_MAX_COMPRESSED_SIZE];
         let len = socket
             .recv(&mut response)
+            .or(self.timeout())
             .await
             .map_err(|e| Error::Recv(self.dns_server.to_string(), e))?;
         response.truncate(len);
         Ok(response)
+    }
+
+    async fn timeout(&self) -> io::Result<usize> {
+        Timer::after(self.timeout).await;
+        Err(TimedOut.into())
     }
 
     pub async fn query_a(&self, name: &[u8]) -> Result<Vec<IpAddr>> {
@@ -91,21 +105,37 @@ fn query_string(query: &[u8]) -> String {
 mod tests {
     use super::*;
     use display_bytes::display_bytes;
-    use std::net::IpAddr;
+    use std::{
+        matches,
+        net::{IpAddr, Ipv4Addr},
+    };
+
+    const SERVER: IpAddr = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+    const TIMEOUT: Duration = Duration::from_secs(2);
+    const EXAMPLE_SERVER: &[u8] = b"example.com";
+    const EXAMPLE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34));
 
     #[test]
-    fn query_google() {
-        let server: IpAddr = "8.8.8.8".parse().unwrap();
-        let resolve = Resolve::with_server(server);
-        let query = b"mail.alienscience.org";
-        let expected: IpAddr = "116.203.10.186".parse().unwrap();
-        let addresses = smol::block_on(async { resolve.query_a(query).await.unwrap() });
-        let found = addresses.into_iter().any(|ip| ip == expected);
+    fn query_a() {
+        let resolve = Resolve::new(SERVER, TIMEOUT);
+        let addresses = smol::block_on(async { resolve.query_a(EXAMPLE_SERVER).await.unwrap() });
+        let found = addresses.into_iter().any(|ip| ip == EXAMPLE_IP);
         assert!(
             found,
             "{} did not resolve to {}",
-            display_bytes(query),
-            expected
+            display_bytes(EXAMPLE_SERVER),
+            EXAMPLE_IP
+        );
+    }
+
+    #[test]
+    fn query_timeout() {
+        let resolve = Resolve::new(SERVER, Duration::from_micros(1));
+        let res = smol::block_on(async { resolve.query_a(EXAMPLE_SERVER).await });
+        assert!(
+            matches!(&res, Err(Error::Recv(_, err)) if err.kind() == TimedOut),
+            "Unexpected result {:?}",
+            res
         );
     }
 }
