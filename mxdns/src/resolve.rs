@@ -107,11 +107,12 @@ fn extract_ips(mut packet: ParsedPacket, query_name: &[u8]) -> Result<Vec<IpAddr
 
 fn extract_name(mut packet: ParsedPacket, query_name: &[u8]) -> Result<Vec<u8>> {
     let response = packet.into_iter_answer();
-    let name = if let Some(i) = response {
+    let raw_name = if let Some(i) = response {
         i.rdata_slice()[DNS_RR_HEADER_SIZE..].to_vec()
     } else {
         return Err(Error::EmptyResponse(query_string(query_name)));
     };
+    let name = parse_raw_name(&raw_name);
     Ok(name)
 }
 
@@ -147,6 +148,25 @@ fn byte_to_nibbles(b: u8) -> Vec<u8> {
     let hn = (b & 0xf0) >> 4;
     let ln = b & 0x0f;
     vec![hn, ln]
+}
+
+fn parse_raw_name(raw: &[u8]) -> Vec<u8> {
+    let mut result = Vec::with_capacity(raw.len());
+    let mut i = 0;
+    let mut remaining = 0;
+    while i < raw.len() {
+        if remaining == 0 {
+            remaining = raw[i];
+            if i > 0 && i < raw.len() - 1 {
+                result.push(b'.')
+            }
+        } else {
+            result.push(raw[i]);
+            remaining -= 1;
+        }
+        i += 1;
+    }
+    result
 }
 
 #[cfg(test)]
