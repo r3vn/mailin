@@ -1,7 +1,8 @@
 use crate::err::{Error, Result};
 use dnssector::{
     constants::{Class, Type, DNS_MAX_COMPRESSED_SIZE},
-    DNSIterable, DNSSector, ParsedPacket, RdataIterable, DNS_FLAG_TC,
+    DNSIterable, DNSSector, ParsedPacket, RdataIterable, TypedIterable, DNS_FLAG_TC,
+    DNS_RR_HEADER_SIZE,
 };
 use smol::{future::FutureExt, net::UdpSocket, Timer};
 use std::{
@@ -25,6 +26,21 @@ impl Resolve {
             dns_server: addr,
             timeout,
         }
+    }
+
+    pub async fn query_a(&self, name: &[u8]) -> Result<Vec<IpAddr>> {
+        let query = dnssector::gen::query(name, Type::A, Class::IN)
+            .map_err(|e| Error::DnsQuery(query_string(name), e))?;
+        let response = self.query(query, name).await?;
+        extract_ips(response, name)
+    }
+
+    pub async fn query_ptr(&self, ip: IpAddr) -> Result<Vec<u8>> {
+        let in_addr = reverse_dns_query(ip);
+        let query = dnssector::gen::query(&in_addr, Type::PTR, Class::IN)
+            .map_err(|e| Error::DnsQuery(query_string(&in_addr), e))?;
+        let response = self.query(query, &in_addr).await?;
+        extract_name(response, &in_addr)
     }
 
     async fn query(&self, packet: ParsedPacket, name: &[u8]) -> Result<ParsedPacket> {
@@ -67,13 +83,6 @@ impl Resolve {
         Timer::after(self.timeout).await;
         Err(TimedOut.into())
     }
-
-    pub async fn query_a(&self, name: &[u8]) -> Result<Vec<IpAddr>> {
-        let query = dnssector::gen::query(name, Type::A, Class::IN)
-            .map_err(|e| Error::DnsQuery(query_string(name), e))?;
-        let response = self.query(query, name).await?;
-        extract_ips(response, name)
-    }
 }
 
 fn extract_ips(mut packet: ParsedPacket, query_name: &[u8]) -> Result<Vec<IpAddr>> {
@@ -96,8 +105,48 @@ fn extract_ips(mut packet: ParsedPacket, query_name: &[u8]) -> Result<Vec<IpAddr
     Ok(ips)
 }
 
+fn extract_name(mut packet: ParsedPacket, query_name: &[u8]) -> Result<Vec<u8>> {
+    let response = packet.into_iter_answer();
+    let name = if let Some(i) = response {
+        i.rdata_slice()[DNS_RR_HEADER_SIZE..].to_vec()
+    } else {
+        return Err(Error::EmptyResponse(query_string(query_name)));
+    };
+    Ok(name)
+}
+
 fn query_string(query: &[u8]) -> String {
     String::from_utf8_lossy(query).to_string()
+}
+
+fn reverse_dns_query(ip: IpAddr) -> Vec<u8> {
+    match ip {
+        IpAddr::V4(i4) => {
+            let octets: Vec<_> = i4.octets().iter().copied().rev().collect();
+            format!(
+                "{}.{}.{}.{}.in-addr.arpa",
+                octets[0], octets[1], octets[2], octets[3]
+            )
+            .into_bytes()
+        }
+        IpAddr::V6(i6) => {
+            let nibbles: Vec<_> = i6
+                .octets()
+                .iter()
+                .flat_map(|b| byte_to_nibbles(*b))
+                .rev()
+                .map(|n| n.to_string())
+                .collect();
+            let prefix = nibbles.join(".");
+            format!("{}.ip6.arpa", prefix).into_bytes()
+        }
+    }
+}
+
+fn byte_to_nibbles(b: u8) -> Vec<u8> {
+    let hn = (b & 0xf0) >> 4;
+    let ln = b & 0x0f;
+    vec![hn, ln]
 }
 
 #[cfg(test)]
@@ -109,14 +158,14 @@ mod tests {
         net::{IpAddr, Ipv4Addr},
     };
 
-    const SERVER: IpAddr = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+    const DNS_SERVER: IpAddr = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
     const TIMEOUT: Duration = Duration::from_secs(2);
-    const EXAMPLE_SERVER: &[u8] = b"example.com";
-    const EXAMPLE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34));
+    const EXAMPLE_SERVER: &[u8] = b"mail.alienscience.org";
+    const EXAMPLE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(116, 203, 10, 186));
 
     #[test]
     fn query_a() {
-        let resolve = Resolve::new(SERVER, TIMEOUT);
+        let resolve = Resolve::new(DNS_SERVER, TIMEOUT);
         let addresses = smol::block_on(async { resolve.query_a(EXAMPLE_SERVER).await.unwrap() });
         let found = addresses.into_iter().any(|ip| ip == EXAMPLE_IP);
         assert!(
@@ -131,7 +180,7 @@ mod tests {
     fn query_cname() {
         const EXAMPLE_CNAME: &[u8] = b"www.alienscience.org";
         const EXAMPLE_CNAME_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(116, 203, 10, 186));
-        let resolve = Resolve::new(SERVER, TIMEOUT);
+        let resolve = Resolve::new(DNS_SERVER, TIMEOUT);
         let addresses = smol::block_on(async { resolve.query_a(EXAMPLE_CNAME).await.unwrap() });
         let found = addresses.into_iter().any(|ip| ip == EXAMPLE_CNAME_IP);
         assert!(
@@ -144,12 +193,25 @@ mod tests {
 
     #[test]
     fn query_timeout() {
-        let resolve = Resolve::new(SERVER, Duration::from_micros(1));
+        let resolve = Resolve::new(DNS_SERVER, Duration::from_micros(1));
         let res = smol::block_on(async { resolve.query_a(EXAMPLE_SERVER).await });
         assert!(
             matches!(&res, Err(Error::Recv(_, err)) if err.kind() == TimedOut),
             "Unexpected result {:?}",
             res
+        );
+    }
+
+    #[test]
+    fn query_ptr() {
+        let resolve = Resolve::new(DNS_SERVER, TIMEOUT);
+        let name = smol::block_on(async { resolve.query_ptr(EXAMPLE_IP).await.unwrap() });
+        assert!(
+            name == EXAMPLE_SERVER,
+            "{} resolved to {:?} but expected {}",
+            EXAMPLE_IP,
+            &name,
+            display_bytes(EXAMPLE_SERVER)
         );
     }
 }

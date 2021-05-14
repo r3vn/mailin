@@ -9,7 +9,7 @@ pub enum Error {
     #[error("{0} - bad dns query {1}")]
     DnsQuery(String, #[source] dnssector::Error),
     #[error("{0} - response packet has no answer")]
-    EmptyResponse(&'static str),
+    EmptyResponse(String),
     #[error("{0} - extract ips")]
     ExtractIps(String, #[source] dnssector::Error),
     #[error("query - udp bind")]
