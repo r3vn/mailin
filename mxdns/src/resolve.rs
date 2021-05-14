@@ -45,7 +45,7 @@ impl Resolve {
 
     async fn query(&self, packet: ParsedPacket, name: &[u8]) -> Result<ParsedPacket> {
         let raw_packet = packet.into_packet();
-        let raw_response = self.query_raw(&raw_packet).await?;
+        let raw_response = self.query_raw_udp(&raw_packet).await?;
         let response = DNSSector::new(raw_response)
             .map_err(|e| Error::ParseResponse(query_string(name), e))?
             .parse()
@@ -59,7 +59,7 @@ impl Resolve {
         Ok(response)
     }
 
-    async fn query_raw(&self, packet: &[u8]) -> Result<Vec<u8>> {
+    async fn query_raw_udp(&self, packet: &[u8]) -> Result<Vec<u8>> {
         let socket = UdpSocket::bind(SOURCE_ADDR).await.map_err(Error::Bind)?;
         socket
             .connect(self.dns_server)
@@ -112,7 +112,7 @@ fn extract_name(mut packet: ParsedPacket, query_name: &[u8]) -> Result<Vec<u8>> 
     } else {
         return Err(Error::EmptyResponse(query_string(query_name)));
     };
-    let name = parse_raw_name(&raw_name);
+    let name = parse_tlv_name(&raw_name);
     Ok(name)
 }
 
@@ -150,7 +150,7 @@ fn byte_to_nibbles(b: u8) -> Vec<u8> {
     vec![hn, ln]
 }
 
-fn parse_raw_name(raw: &[u8]) -> Vec<u8> {
+fn parse_tlv_name(raw: &[u8]) -> Vec<u8> {
     let mut result = Vec::with_capacity(raw.len());
     let mut i = 0;
     let mut remaining = 0;
