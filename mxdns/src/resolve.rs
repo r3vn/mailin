@@ -49,7 +49,6 @@ impl Resolve {
             .connect(self.dns_server)
             .await
             .map_err(|e| Error::Connect(self.dns_server.to_string(), e))?;
-        // TODO: timeout
         socket
             .send(&packet)
             .await
@@ -125,6 +124,21 @@ mod tests {
             "{} did not resolve to {}",
             display_bytes(EXAMPLE_SERVER),
             EXAMPLE_IP
+        );
+    }
+
+    #[test]
+    fn query_cname() {
+        const EXAMPLE_CNAME: &[u8] = b"www.alienscience.org";
+        const EXAMPLE_CNAME_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(116, 203, 10, 186));
+        let resolve = Resolve::new(SERVER, TIMEOUT);
+        let addresses = smol::block_on(async { resolve.query_a(EXAMPLE_CNAME).await.unwrap() });
+        let found = addresses.into_iter().any(|ip| ip == EXAMPLE_CNAME_IP);
+        assert!(
+            found,
+            "{} did not resolve to {}",
+            display_bytes(EXAMPLE_CNAME),
+            EXAMPLE_CNAME_IP
         );
     }
 
