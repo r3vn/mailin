@@ -1,12 +1,12 @@
 use crate::err::{Error, Result};
 use dnssector::{
     constants::{Class, Type, DNS_MAX_COMPRESSED_SIZE},
-    DNSIterable, DNSSector, ParsedPacket, RdataIterable, TypedIterable, DNS_FLAG_TC,
-    DNS_RR_HEADER_SIZE,
+    Compress, DNSIterable, DNSSector, ParsedPacket, RdataIterable, DNS_FLAG_TC, DNS_RR_HEADER_SIZE,
 };
 use smol::{future::FutureExt, net::UdpSocket, Timer};
 use std::{
     io::{self, ErrorKind::TimedOut},
+    matches,
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
@@ -40,12 +40,27 @@ impl Resolve {
         let query = dnssector::gen::query(&in_addr, Type::PTR, Class::IN)
             .map_err(|e| Error::DnsQuery(query_string(&in_addr), e))?;
         let response = self.query(query, &in_addr).await?;
-        extract_name(response, &in_addr)
+        extract_names(response, &in_addr).map(|mut v| v.remove(0))
+    }
+
+    pub async fn query_ns(&self, domain: &[u8]) -> Result<Vec<Vec<u8>>> {
+        let query = dnssector::gen::query(domain, Type::NS, Class::IN)
+            .map_err(|e| Error::DnsQuery(query_string(domain), e))?;
+        let response = self.query(query, domain).await?;
+        extract_names(response, domain)
     }
 
     async fn query(&self, packet: ParsedPacket, name: &[u8]) -> Result<ParsedPacket> {
+        let is_compressed = match packet.qtype_qclass() {
+            Some((rr_type, __)) if rr_type == Type::NS as u16 => true,
+            _ => false,
+        };
         let raw_packet = packet.into_packet();
-        let raw_response = self.query_raw_udp(&raw_packet).await?;
+        let mut raw_response = self.query_raw_udp(&raw_packet).await?;
+        if is_compressed {
+            raw_response = Compress::uncompress(&raw_response)
+                .map_err(|e| Error::ParseResponse(query_string(name), e))?;
+        }
         let response = DNSSector::new(raw_response)
             .map_err(|e| Error::ParseResponse(query_string(name), e))?
             .parse()
@@ -105,15 +120,19 @@ fn extract_ips(mut packet: ParsedPacket, query_name: &[u8]) -> Result<Vec<IpAddr
     Ok(ips)
 }
 
-fn extract_name(mut packet: ParsedPacket, query_name: &[u8]) -> Result<Vec<u8>> {
-    let response = packet.into_iter_answer();
-    let raw_name = if let Some(i) = response {
-        i.rdata_slice()[DNS_RR_HEADER_SIZE..].to_vec()
-    } else {
+fn extract_names(mut packet: ParsedPacket, query_name: &[u8]) -> Result<Vec<Vec<u8>>> {
+    let mut response = packet.into_iter_answer();
+    let mut ret = Vec::new();
+    while let Some(i) = response {
+        let raw_name = &i.rdata_slice()[DNS_RR_HEADER_SIZE..];
+        let name = parse_tlv_name(&raw_name);
+        ret.push(name);
+        response = i.next();
+    }
+    if ret.is_empty() {
         return Err(Error::EmptyResponse(query_string(query_name)));
-    };
-    let name = parse_tlv_name(&raw_name);
-    Ok(name)
+    }
+    Ok(ret)
 }
 
 fn query_string(query: &[u8]) -> String {
@@ -232,6 +251,22 @@ mod tests {
             EXAMPLE_IP,
             &name,
             display_bytes(EXAMPLE_SERVER)
+        );
+    }
+
+    #[test]
+    fn query_ns() {
+        const EXAMPLE_DOMAIN: &[u8] = b"alienscience.org";
+        const EXAMPLE_NS: &[u8] = b"ns1.tsodns.com";
+        let resolve = Resolve::new(DNS_SERVER, TIMEOUT);
+        let ns_servers = smol::block_on(async { resolve.query_ns(EXAMPLE_DOMAIN).await.unwrap() });
+        let found = ns_servers.iter().any(|ns| ns == EXAMPLE_NS);
+        assert!(
+            found,
+            "{} ns resolved to {}, expected {}",
+            display_bytes(EXAMPLE_DOMAIN),
+            display_bytes(&ns_servers[0]),
+            display_bytes(EXAMPLE_NS)
         );
     }
 }
