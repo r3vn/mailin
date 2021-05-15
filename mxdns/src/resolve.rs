@@ -142,10 +142,10 @@ fn query_string(query: &[u8]) -> String {
 fn reverse_dns_query(ip: IpAddr) -> Vec<u8> {
     match ip {
         IpAddr::V4(i4) => {
-            let octets: Vec<_> = i4.octets().iter().copied().rev().collect();
+            let octets = i4.octets();
             format!(
                 "{}.{}.{}.{}.in-addr.arpa",
-                octets[0], octets[1], octets[2], octets[3]
+                octets[3], octets[2], octets[1], octets[0]
             )
             .into_bytes()
         }
@@ -173,10 +173,10 @@ fn parse_tlv_name(raw: &[u8]) -> Vec<u8> {
     let mut result = Vec::with_capacity(raw.len());
     let mut i = 0;
     let mut remaining = 0;
-    while i < raw.len() {
+    while i < raw.len() && raw[i] != 0 {
         if remaining == 0 {
             remaining = raw[i];
-            if i > 0 && i < raw.len() - 1 {
+            if i > 0 {
                 result.push(b'.')
             }
         } else {
