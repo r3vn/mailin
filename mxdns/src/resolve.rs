@@ -35,6 +35,13 @@ impl Resolve {
         extract_ips(response, name)
     }
 
+    pub async fn query_aaaa(&self, name: &[u8]) -> Result<Vec<IpAddr>> {
+        let query = dnssector::gen::query(name, Type::AAAA, Class::IN)
+            .map_err(|e| Error::DnsQuery(query_string(name), e))?;
+        let response = self.query(query, name).await?;
+        extract_ips(response, name)
+    }
+
     pub async fn query_ptr(&self, ip: IpAddr) -> Result<Vec<u8>> {
         let in_addr = reverse_dns_query(ip);
         let query = dnssector::gen::query(&in_addr, Type::PTR, Class::IN)
@@ -194,13 +201,16 @@ mod tests {
     use display_bytes::display_bytes;
     use std::{
         matches,
-        net::{IpAddr, Ipv4Addr},
+        net::{IpAddr, Ipv4Addr, Ipv6Addr},
     };
 
     const DNS_SERVER: IpAddr = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
     const TIMEOUT: Duration = Duration::from_secs(2);
     const EXAMPLE_SERVER: &[u8] = b"mail.alienscience.org";
     const EXAMPLE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(116, 203, 10, 186));
+    const EXAMPLE_IPV6_SERVER: &[u8] = b"dns.google";
+    const EXAMPLE_IPV6_IP: IpAddr =
+        IpAddr::V6(Ipv6Addr::new(0x2001, 0x4860, 0x4860, 0, 0, 0, 0, 0x8888));
 
     #[test]
     fn query_a() {
@@ -212,6 +222,21 @@ mod tests {
             "{} did not resolve to {}",
             display_bytes(EXAMPLE_SERVER),
             EXAMPLE_IP
+        );
+    }
+
+    #[test]
+    fn query_aaaa() {
+        let resolve = Resolve::new(DNS_SERVER, TIMEOUT);
+        let addresses =
+            smol::block_on(async { resolve.query_aaaa(EXAMPLE_IPV6_SERVER).await.unwrap() });
+        let found = addresses.iter().any(|ip| *ip == EXAMPLE_IPV6_IP);
+        assert!(
+            found,
+            "{} resolved to {:?} expected {}",
+            display_bytes(EXAMPLE_IPV6_SERVER),
+            addresses,
+            EXAMPLE_IPV6_IP
         );
     }
 
@@ -242,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn query_ptr() {
+    fn query_ptr_ipv4() {
         let resolve = Resolve::new(DNS_SERVER, TIMEOUT);
         let name = smol::block_on(async { resolve.query_ptr(EXAMPLE_IP).await.unwrap() });
         assert!(
@@ -251,6 +276,19 @@ mod tests {
             EXAMPLE_IP,
             &name,
             display_bytes(EXAMPLE_SERVER)
+        );
+    }
+
+    #[test]
+    fn query_ptr_ipv6() {
+        let resolve = Resolve::new(DNS_SERVER, TIMEOUT);
+        let name = smol::block_on(async { resolve.query_ptr(EXAMPLE_IPV6_IP).await.unwrap() });
+        assert!(
+            name == EXAMPLE_IPV6_SERVER,
+            "{} resolved to {:?} but expected {}",
+            EXAMPLE_IPV6_IP,
+            &name,
+            display_bytes(EXAMPLE_IPV6_SERVER)
         );
     }
 
