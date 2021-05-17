@@ -6,14 +6,15 @@ use dnssector::{
 use smol::{future::FutureExt, net::UdpSocket, Timer};
 use std::{
     io::{self, ErrorKind::TimedOut},
-    matches,
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
 
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(2);
 const DNS_PORT: u16 = 53;
 const SOURCE_ADDR: &str = "0.0.0.0:0";
 
+#[derive(Clone)]
 pub struct Resolve {
     dns_server: SocketAddr,
     timeout: Duration,
@@ -107,6 +108,26 @@ impl Resolve {
     }
 }
 
+// Reverse an IP address
+pub fn reverse_ip(ip: &IpAddr) -> String {
+    match ip {
+        IpAddr::V4(i4) => {
+            let octets = i4.octets();
+            format!("{}.{}.{}.{}", octets[3], octets[2], octets[1], octets[0])
+        }
+        IpAddr::V6(i6) => {
+            let nibbles: Vec<_> = i6
+                .octets()
+                .iter()
+                .flat_map(|b| byte_to_nibbles(*b))
+                .rev()
+                .map(|n| n.to_string())
+                .collect();
+            nibbles.join(".")
+        }
+    }
+}
+
 fn extract_ips(mut packet: ParsedPacket, query_name: &[u8]) -> Result<Vec<IpAddr>> {
     use std::result::Result as StdResult;
 
@@ -147,26 +168,10 @@ fn query_string(query: &[u8]) -> String {
 }
 
 fn reverse_dns_query(ip: IpAddr) -> Vec<u8> {
+    let prefix = reverse_ip(&ip);
     match ip {
-        IpAddr::V4(i4) => {
-            let octets = i4.octets();
-            format!(
-                "{}.{}.{}.{}.in-addr.arpa",
-                octets[3], octets[2], octets[1], octets[0]
-            )
-            .into_bytes()
-        }
-        IpAddr::V6(i6) => {
-            let nibbles: Vec<_> = i6
-                .octets()
-                .iter()
-                .flat_map(|b| byte_to_nibbles(*b))
-                .rev()
-                .map(|n| n.to_string())
-                .collect();
-            let prefix = nibbles.join(".");
-            format!("{}.ip6.arpa", prefix).into_bytes()
-        }
+        IpAddr::V4(_) => format!("{}.in-addr.arpa", prefix).into_bytes(),
+        IpAddr::V6(_) => format!("{}.ip6.arpa", prefix).into_bytes(),
     }
 }
 

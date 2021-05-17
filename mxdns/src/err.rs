@@ -24,6 +24,16 @@ pub enum Error {
     ParseResponse(String, #[source] dnssector::Error),
     #[error("{0} - {1} requires TCP which is unsupported")]
     TcpUnsupported(String, String),
+    #[error("{0} - parse error")]
+    ResolvConfParseError(String, #[source] ParseError),
+    #[error("{0} - no nameservers found")]
+    NoNameservers(String),
+    #[error("{0} - blocklist nameserver lookup failure")]
+    BlockListNameserver(String, #[source] Box<Self>),
+    #[error("{0} - cannot obtain ips for blocklist nameserver")]
+    BlockListNameserverIp(String),
+    #[error("{0} - blocklist lookup failure")]
+    BlockListLookup(String, #[source] Box<Self>),
 }
 
 /*
