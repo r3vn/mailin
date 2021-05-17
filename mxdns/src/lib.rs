@@ -34,7 +34,6 @@
 mod err;
 mod resolve;
 
-/*
 use crate::err::Error;
 use log::Level::Debug;
 use log::{debug, log_enabled};
@@ -43,14 +42,6 @@ use std::fs::File;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
-use tokio::prelude::Future;
-use tokio::runtime::current_thread::Runtime;
-use tokio_udp;
-use trust_dns::client::{BasicClientHandle, ClientFuture, ClientHandle};
-use trust_dns::rr::{DNSClass, Name, RData, RecordType};
-use trust_dns::udp::UdpClientStream;
-
-type UdpResponse = trust_dns::proto::udp::UdpResponse<tokio_udp::UdpSocket>;
 
 const RESOLV_CONF: &str = "/etc/resolv.conf";
 
@@ -132,6 +123,7 @@ impl MxDns {
         }
 
         // Convert the address into a query for each blocklist
+        // TODO: support both ipv4 and ipv6
         let ip = addr.into();
         let ip = match to_ipv4(ip) {
             Ok(i) => i,
@@ -466,4 +458,3 @@ mod tests {
         );
     }
 }
-*/
