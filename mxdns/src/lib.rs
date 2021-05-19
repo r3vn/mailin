@@ -216,10 +216,11 @@ mod tests {
     fn blocklists() -> Vec<(&'static str, bool)> {
         // Tuples are (fqdn, has_nameserver)
         vec![
-            ("zen.spamhaus.org.", true),
-            ("bl.spamcop.net.", false),
-            ("dnsbl-1.uceprotect.net.", true),
-            ("pbsl.surriel.com.", false),
+            ("zen.spamhaus.org", true),
+            ("bl.spamcop.net", false),
+            ("dnsbl-1.uceprotect.net", true),
+            ("b.barracuda.central.org", false),
+            ("cbl.abuseat.org", true),
         ]
     }
 
