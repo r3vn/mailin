@@ -659,6 +659,7 @@ dependencies = [
  "display_bytes",
  "dnssector",
  "log",
+ "pin-project-lite",
  "resolv-conf",
  "smol",
  "thiserror",

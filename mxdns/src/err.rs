@@ -25,7 +25,9 @@ pub enum Error {
     #[error("{0} - {1} requires TCP which is unsupported")]
     TcpUnsupported(String, String),
     #[error("{0} - parse error")]
-    ResolvConfParseError(String, #[source] ParseError),
+    ResolvConfRead(String, #[source] io::Error),
+    #[error("{0} - parse error")]
+    ResolvConfParse(String, #[source] ParseError),
     #[error("{0} - no nameservers found")]
     NoNameservers(String),
     #[error("{0} - blocklist nameserver lookup failure")]

@@ -33,18 +33,20 @@
 */
 mod blocklist;
 mod err;
+mod join_all;
 mod resolve;
 
 pub use crate::{
     blocklist::BlockList,
     err::{Error, Result},
+    join_all::join_all,
     resolve::Resolve,
 };
 use log::Level::Debug;
 use log::{debug, log_enabled};
 use resolv_conf;
 use resolve::DEFAULT_TIMEOUT;
-use smol::future;
+use smol::future::{self, FutureExt};
 use std::{
     fs::File,
     io::Read,
@@ -87,10 +89,12 @@ impl MxDns {
         S::Item: Into<String>,
     {
         let mut buf = Vec::with_capacity(256);
-        let mut file = File::open(RESOLV_CONF)?;
-        file.read_to_end(&mut buf)?;
+        let mut file = File::open(RESOLV_CONF)
+            .map_err(|e| Error::ResolvConfRead(RESOLV_CONF.to_string(), e))?;
+        file.read_to_end(&mut buf)
+            .map_err(|e| Error::ResolvConfRead(RESOLV_CONF.to_string(), e))?;
         let conf = resolv_conf::Config::parse(&buf)
-            .map_err(|e| Error::ResolvConfParseError(RESOLV_CONF.to_string(), e))?;
+            .map_err(|e| Error::ResolvConfParse(RESOLV_CONF.to_string(), e))?;
         let nameservers = conf.get_nameservers_or_local();
         if let Some(ip) = nameservers.first() {
             let ip_addr: IpAddr = ip.into();
@@ -127,34 +131,24 @@ impl MxDns {
         }
         let ip: IpAddr = addr.into();
 
-        let res = smol::block_on(async {
-            if self.blocklists.len() == 1 {
-                self.check_blocklist(&self.blocklists[0], ip).await
-            } else {
-                let mut all_checks = future::zip(
-                    self.check_blocklist(&self.blocklists[0], ip),
-                    self.check_blocklist(&self.blocklists[1], ip),
-                );
-                for blocklist in self.blocklists[2..].iter() {
-                    let one_check = self.check_blocklist(blocklist, ip);
-                    all_checks = future::zip(all_checks, one_check);
-                }
-                all_checks.await
+        let ret = smol::block_on(async {
+            let mut all_checks = Vec::new();
+            for blocklist in &self.blocklists {
+                let one_check = self.check_blocklist(blocklist, ip);
+                all_checks.push(one_check.boxed());
             }
+            join_all(all_checks).await
         });
-        /*
         if log_enabled!(Debug) {
             for i in ret.iter().enumerate() {
                 debug!("{} is blocked by {} = {:?}", ip, self.blocklists[i.0], i.1);
             }
         }
         ret
-        */
-        todo!()
     }
 
     async fn check_blocklist(&self, blocklist: &str, ip: IpAddr) -> Result<bool> {
-        let resolver = BlockList::lookup_ns(blocklist, self.bootstrap).await?;
+        let resolver = BlockList::lookup_ns(blocklist, &self.bootstrap).await?;
         let blocklist_lookup = BlockList::new(resolver, blocklist);
         blocklist_lookup.is_blocked(ip).await
     }
@@ -168,19 +162,20 @@ impl MxDns {
         if res.is_empty() {
             Ok(false)
         } else if res.iter().all(|r| r.is_err()) {
-            res.pop()
-                .unwrap_or_else(|| Err(Error::new("Failed to pop a non-empty error iterator")))
+            res.pop().unwrap_or_else(|| Ok(false))
         } else {
             Ok(res.into_iter().any(|r| r.unwrap_or(false)))
         }
     }
 
+    /*
     /// Does a reverse DNS lookup on the given ip address
     /// Returns Ok(None) if no reverse DNS entry exists.
     pub fn reverse_dns<A>(&self, ip: A) -> Result<Option<String>>
     where
         A: Into<IpAddr>,
     {
+        self.bootstrap.query_ptr(ip.into())
         let ip = ip.into();
         let ip = to_ipv4(ip)?;
         let query = format_ipv4(ip, "in-addr.arpa");
@@ -224,6 +219,7 @@ impl MxDns {
             Err(e) => Err(e),
         }
     }
+    */
 }
 
 #[cfg(test)]

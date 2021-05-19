@@ -17,6 +17,7 @@ dnssector = "0.2"
 resolv-conf = "0.7"
 log = "0.4"
 smol = "1.2.5"
+pin-project-lite = "0.2.6"
 
 [dev-dependencies]
 display_bytes = "0.2"

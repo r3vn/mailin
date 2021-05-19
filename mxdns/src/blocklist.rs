@@ -2,7 +2,7 @@ use crate::{
     err::{Error, Result},
     resolve::{reverse_ip, Resolve, DEFAULT_TIMEOUT},
 };
-use std::{net::IpAddr, time::Duration};
+use std::net::IpAddr;
 
 // TODO: TTL, multiple NS
 pub struct BlockList {
@@ -22,7 +22,7 @@ impl BlockList {
         let nameservers = resolver
             .query_ns(blocklist.as_bytes())
             .await
-            .map_err(|e| Error::BlockListNameserver(blocklist.to_string(), e))?;
+            .map_err(|e| Error::BlockListNameserver(blocklist.to_string(), Box::new(e)))?;
         if nameservers.is_empty() {
             return Ok(resolver.clone());
         }
@@ -47,7 +47,7 @@ impl BlockList {
             .resolver
             .query_a(&query)
             .await
-            .map_err(|e| Error::BlockListLookup(query_string, e))?;
+            .map_err(|e| Error::BlockListLookup(query_string, Box::new(e)))?;
         Ok(!result.is_empty())
     }
 }
