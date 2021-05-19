@@ -164,28 +164,26 @@ impl MxDns {
         } else if res.iter().all(|r| r.is_err()) {
             res.pop().unwrap_or_else(|| Ok(false))
         } else {
-            Ok(res.into_iter().any(|r| r.unwrap_or(false)))
+            let is_blocked = res.into_iter().any(|r| r.unwrap_or(false));
+            Ok(is_blocked)
+        }
+    }
+
+    /// Does a reverse DNS lookup on the given ip address
+    /// Returns Ok(None) if no reverse DNS entry exists.
+    pub fn reverse_dns<A>(&self, ip: A) -> Result<Option<Vec<u8>>>
+    where
+        A: Into<IpAddr>,
+    {
+        let res = smol::block_on(self.bootstrap.query_ptr(ip.into()));
+        match res {
+            Ok(fqdn) => Ok(Some(fqdn)),
+            Err(Error::EmptyResponse(_)) => Ok(None),
+            Err(e) => Err(e),
         }
     }
 
     /*
-    /// Does a reverse DNS lookup on the given ip address
-    /// Returns Ok(None) if no reverse DNS entry exists.
-    pub fn reverse_dns<A>(&self, ip: A) -> Result<Option<String>>
-    where
-        A: Into<IpAddr>,
-    {
-        self.bootstrap.query_ptr(ip.into())
-        let ip = ip.into();
-        let ip = to_ipv4(ip)?;
-        let query = format_ipv4(ip, "in-addr.arpa");
-        let mut runtime = Runtime::new().unwrap();
-        let (task, mut client) = connect_client(self.bootstrap);
-        runtime.spawn(task);
-        let rdns = lookup_ptr(&mut client, &query);
-        runtime.block_on(rdns).map(|o| o.map(|name| name.to_utf8()))
-    }
-
     /// Does a Forward Confirmed Reverse DNS check on the given ip address
     /// This checks that the reverse lookup on the ip address gives a domain
     /// name that will resolve to the original ip address.
@@ -226,9 +224,10 @@ impl MxDns {
 mod tests {
     use super::*;
 
+    const BOOTSTRAP_DNS: IpAddr = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+
     fn blocklists() -> Vec<(&'static str, bool)> {
         // Tuples are (fqdn, has_nameserver)
-        // Removed:  ("dnsrbl.org.", true),
         vec![
             ("zen.spamhaus.org.", true),
             ("bl.spamcop.net.", false),
@@ -238,44 +237,40 @@ mod tests {
     }
 
     fn build_mx_dns() -> MxDns {
-        let bootstrap: IpAddr = "8.8.8.8".parse().unwrap();
         let blocklists = blocklists()
             .iter()
             .map(|t| t.0)
             .collect::<Vec<&'static str>>();
-        MxDns::with_dns(bootstrap, blocklists)
+        MxDns::with_dns(BOOTSTRAP_DNS, blocklists)
     }
 
     #[test]
     fn empty_blocklists() {
-        let bootstrap: IpAddr = "8.8.8.8".parse().unwrap();
         let empty: Vec<String> = Vec::new();
-        let mxdns = MxDns::with_dns(bootstrap, empty);
+        let mxdns = MxDns::with_dns(BOOTSTRAP_DNS, empty);
         let blocked = mxdns.is_blocked(Ipv4Addr::new(127, 0, 0, 2)).unwrap();
         assert_eq!(blocked, false);
     }
 
-    #[cfg_attr(feature = "no-network-tests", ignore)]
     #[test]
     fn blocklist_addrs() {
         let mxdns = build_mx_dns();
-        let dns_server: SocketAddr = "8.8.8.8:53".parse().unwrap();
-        let (bootstrap_task, bootstrap_client) = connect_client(dns_server);
-        let mut runtime = Runtime::new().unwrap();
-        runtime.spawn(bootstrap_task);
-        let addrs = mxdns.blocklist_addrs(&mut runtime, bootstrap_client);
         let blocklists = blocklists();
         for i in 0..blocklists.len() {
             let b = blocklists[i];
+            let ns = smol::block_on(async { mxdns.bootstrap.query_ns(b.0.as_bytes()).await });
             if b.1 {
-                assert!(matches!(addrs[i], Some(_)), "no NS for {}", b.0);
+                assert!(matches!(ns, Ok(_)), "no NS for {}", b.0);
             } else {
-                assert!(matches!(addrs[i], None), "unexpected NS for {}", b.0);
+                assert!(
+                    matches!(ns, Err(Error::EmptyResponse(_))),
+                    "unexpected NS for {}",
+                    b.0
+                );
             }
         }
     }
 
-    #[cfg_attr(feature = "no-network-tests", ignore)]
     #[test]
     fn not_blocked() {
         let mxdns = build_mx_dns();
@@ -283,7 +278,6 @@ mod tests {
         assert_eq!(blocked, false);
     }
 
-    #[cfg_attr(feature = "no-network-tests", ignore)]
     #[test]
     fn blocked() {
         let mxdns = build_mx_dns();
@@ -291,15 +285,14 @@ mod tests {
         assert_eq!(blocked, true);
     }
 
-    #[cfg_attr(feature = "no-network-tests", ignore)]
     #[test]
     fn reverse_lookup() {
         let mxdns = build_mx_dns();
-        let addr = "116.203.10.186".parse::<IpAddr>().unwrap();
-        let reverse = mxdns.reverse_dns(addr).unwrap().unwrap();
-        assert_eq!(reverse, "mail.alienscience.org.");
+        let reverse = mxdns.reverse_dns([116, 203, 10, 186]).unwrap().unwrap();
+        assert_eq!(reverse, b"mail.alienscience.org");
     }
 
+    /*
     #[cfg_attr(feature = "no-network-tests", ignore)]
     #[test]
     fn fcrdns_ok() {
@@ -336,4 +329,5 @@ mod tests {
             res
         );
     }
+    */
 }
