@@ -46,13 +46,8 @@ use log::Level::Debug;
 use log::{debug, log_enabled};
 use resolv_conf;
 use resolve::DEFAULT_TIMEOUT;
-use smol::future::{self, FutureExt};
-use std::{
-    fs::File,
-    io::Read,
-    matches,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-};
+use smol::future::FutureExt;
+use std::{fs::File, io::Read, matches, net::IpAddr};
 
 const RESOLV_CONF: &str = "/etc/resolv.conf";
 
@@ -69,9 +64,9 @@ pub enum FCrDNS {
     /// Reverse lookup failed
     NoReverse,
     /// Reverse lookup was successful but could not be forward confirmed
-    UnConfirmed(String),
+    UnConfirmed(Vec<u8>),
     /// The reverse lookup was forward confirmed
-    Confirmed(String),
+    Confirmed(Vec<u8>),
 }
 
 impl FCrDNS {
@@ -183,7 +178,6 @@ impl MxDns {
         }
     }
 
-    /*
     /// Does a Forward Confirmed Reverse DNS check on the given ip address
     /// This checks that the reverse lookup on the ip address gives a domain
     /// name that will resolve to the original ip address.
@@ -193,36 +187,29 @@ impl MxDns {
         A: Into<IpAddr>,
     {
         let ipaddr = ip.into();
-        let ipaddr = to_ipv4(ipaddr)?;
         let fqdn = match self.reverse_dns(ipaddr)? {
             None => return Ok(FCrDNS::NoReverse),
             Some(s) => s,
         };
-        debug!("reverse lookup for {} = {}", ipaddr, fqdn);
-        let (task, client) = connect_client(self.bootstrap);
-        let mut runtime = Runtime::new().unwrap();
-        runtime.spawn(task);
-        let forward = lookup_ip(client, &fqdn);
-        let is_confirmed = runtime.block_on(forward).map(|maybe_ip| {
-            maybe_ip
-                .filter(|c| {
-                    debug!("ipaddr = {}, forward confirmed = {} ", ipaddr, c);
-                    c == &ipaddr
-                })
-                .is_some()
-        });
-        match is_confirmed {
-            Ok(true) => Ok(FCrDNS::Confirmed(fqdn)),
-            Ok(false) => Ok(FCrDNS::UnConfirmed(fqdn)),
-            Err(e) => Err(e),
+        debug!(
+            "reverse lookup for {} = {}",
+            ipaddr,
+            String::from_utf8_lossy(&fqdn)
+        );
+        let forward = smol::block_on(self.bootstrap.query_a(&fqdn))?;
+        let is_confirmed = forward.contains(&ipaddr);
+        if is_confirmed {
+            Ok(FCrDNS::Confirmed(fqdn))
+        } else {
+            Ok(FCrDNS::UnConfirmed(fqdn))
         }
     }
-    */
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::Ipv4Addr;
 
     const BOOTSTRAP_DNS: IpAddr = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
 
@@ -292,12 +279,10 @@ mod tests {
         assert_eq!(reverse, b"mail.alienscience.org");
     }
 
-    /*
-    #[cfg_attr(feature = "no-network-tests", ignore)]
     #[test]
     fn fcrdns_ok() {
         let mxdns = build_mx_dns();
-        let res = mxdns.fcrdns([116, 203, 3, 137]);
+        let res = mxdns.fcrdns([116, 203, 10, 186]);
         assert!(
             matches!(res, Ok(FCrDNS::Confirmed(_))),
             "Valid mail server failed fcrdns: {:?}",
@@ -305,7 +290,6 @@ mod tests {
         );
     }
 
-    #[cfg_attr(feature = "no-network-tests", ignore)]
     #[test]
     fn fcrdns_google_ok() {
         let mxdns = build_mx_dns();
@@ -317,7 +301,6 @@ mod tests {
         );
     }
 
-    #[cfg_attr(feature = "no-network-tests", ignore)]
     #[test]
     fn fcrdns_fail() {
         let mxdns = build_mx_dns();
@@ -329,5 +312,4 @@ mod tests {
             res
         );
     }
-    */
 }

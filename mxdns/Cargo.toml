@@ -21,9 +21,3 @@ pin-project-lite = "0.2.6"
 
 [dev-dependencies]
 display_bytes = "0.2"
-
-[features]
-# TODO: fix this
-# Some tests use DNS blocklists servers over the internet.
-# Set this feature to turn off the tests that require network access.
-no-network-tests = []
