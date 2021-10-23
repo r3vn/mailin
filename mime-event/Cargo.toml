@@ -9,7 +9,7 @@ readme = "README.md"
 keywords = ["mime","smtp","email"]
 categories = ["email","parser-implementations"]
 license = "MIT OR Apache-2.0"
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 nom = "6"
