@@ -45,7 +45,7 @@ trait State {
         fsm: &mut StateMachine,
         handler: &mut dyn Handler,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>);
+    ) -> (Response, Option<Box<dyn State + Send>>);
 
     // Most state will convert an input line into a command.
     // Some states, e.g Data, need to process input lines differently and will
@@ -64,12 +64,12 @@ trait State {
 
 // Return the next state depending on the response
 fn next_state<F>(
-    current: Box<dyn State>,
+    current: Box<dyn State + Send>,
     res: Response,
     next_state: F,
-) -> (Response, Option<Box<dyn State>>)
+) -> (Response, Option<Box<dyn State + Send>>)
 where
-    F: FnOnce() -> Box<dyn State>,
+    F: FnOnce() -> Box<dyn State + Send>,
 {
     if res.action == Action::Close {
         (res, None)
@@ -85,10 +85,10 @@ fn transform_state<S, F>(
     current: Box<S>,
     res: Response,
     next_state: F,
-) -> (Response, Option<Box<dyn State>>)
+) -> (Response, Option<Box<dyn State + Send>>)
 where
-    S: State + 'static,
-    F: FnOnce(S) -> Box<dyn State>,
+    S: State + Send + 'static,
+    F: FnOnce(S) -> Box<dyn State + Send>,
 {
     if res.action == Action::Close {
         (res, None)
@@ -100,11 +100,11 @@ where
 }
 
 fn default_handler(
-    current: Box<dyn State>,
+    current: Box<dyn State + Send>,
     fsm: &StateMachine,
     handler: &mut dyn Handler,
     cmd: &Cmd,
-) -> (Response, Option<Box<dyn State>>) {
+) -> (Response, Option<Box<dyn State + Send>>) {
     match *cmd {
         Cmd::Quit => (GOODBYE, None),
         Cmd::Helo { domain } => handle_helo(current, fsm, handler, domain),
@@ -113,11 +113,11 @@ fn default_handler(
     }
 }
 
-fn unhandled(current: Box<dyn State>) -> (Response, Option<Box<dyn State>>) {
+fn unhandled(current: Box<dyn State + Send>) -> (Response, Option<Box<dyn State + Send>>) {
     (BAD_SEQUENCE_COMMANDS, Some(current))
 }
 
-fn handle_rset(fsm: &StateMachine, domain: &str) -> (Response, Option<Box<dyn State>>) {
+fn handle_rset(fsm: &StateMachine, domain: &str) -> (Response, Option<Box<dyn State + Send>>) {
     match fsm.auth_state {
         AuthState::Unavailable => (
             OK,
@@ -135,11 +135,11 @@ fn handle_rset(fsm: &StateMachine, domain: &str) -> (Response, Option<Box<dyn St
 }
 
 fn handle_helo(
-    current: Box<dyn State>,
+    current: Box<(dyn State + Send)>,
     fsm: &StateMachine,
     handler: &mut dyn Handler,
     domain: &str,
-) -> (Response, Option<Box<dyn State>>) {
+) -> (Response, Option<Box<dyn State + Send>>) {
     match fsm.auth_state {
         AuthState::Unavailable => {
             let res = handler.helo(fsm.ip, domain);
@@ -157,11 +157,11 @@ fn handle_helo(
 }
 
 fn handle_ehlo(
-    current: Box<dyn State>,
+    current: Box<dyn State + Send>,
     fsm: &StateMachine,
     handler: &mut dyn Handler,
     domain: &str,
-) -> (Response, Option<Box<dyn State>>) {
+) -> (Response, Option<Box<dyn State + Send>>) {
     let mut res = handler.helo(fsm.ip, domain);
     if res.code == 250 {
         res = fsm.ehlo_response();
@@ -211,7 +211,7 @@ impl State for Idle {
         fsm: &mut StateMachine,
         handler: &mut dyn Handler,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>) {
+    ) -> (Response, Option<Box<dyn State + Send>>) {
         match cmd {
             Cmd::StartedTls => {
                 fsm.tls = TlsState::Active;
@@ -240,7 +240,7 @@ impl State for Hello {
         fsm: &mut StateMachine,
         handler: &mut dyn Handler,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>) {
+    ) -> (Response, Option<Box<dyn State + Send>>) {
         match cmd {
             Cmd::Mail {
                 reverse_path,
@@ -280,7 +280,7 @@ impl State for HelloAuth {
         fsm: &mut StateMachine,
         handler: &mut dyn Handler,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>) {
+    ) -> (Response, Option<Box<dyn State + Send>>) {
         match cmd {
             Cmd::StartTls => (START_TLS, Some(Box::new(Idle {}))),
             Cmd::AuthPlain {
@@ -325,7 +325,7 @@ impl State for Auth {
         fsm: &mut StateMachine,
         handler: &mut dyn Handler,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>) {
+    ) -> (Response, Option<Box<dyn State + Send>>) {
         match cmd {
             Cmd::AuthResponse { response } => {
                 let res = match self.mechanism {
@@ -382,7 +382,7 @@ impl State for Mail {
         fsm: &mut StateMachine,
         handler: &mut dyn Handler,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>) {
+    ) -> (Response, Option<Box<dyn State + Send>>) {
         match cmd {
             Cmd::Rcpt { forward_path } => {
                 let res = handler.rcpt(forward_path);
@@ -422,7 +422,7 @@ impl State for Rcpt {
         fsm: &mut StateMachine,
         handler: &mut dyn Handler,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>) {
+    ) -> (Response, Option<Box<dyn State + Send>>) {
         match cmd {
             Cmd::Data => {
                 let res = handler.data_start(
@@ -470,7 +470,7 @@ impl State for Data {
         _fsm: &mut StateMachine,
         handler: &mut dyn Handler,
         cmd: Cmd,
-    ) -> (Response, Option<Box<dyn State>>) {
+    ) -> (Response, Option<Box<dyn State + Send>>) {
         match cmd {
             Cmd::DataEnd => {
                 let res = handler.data_end();
@@ -509,7 +509,7 @@ pub(crate) struct StateMachine {
     auth_mechanisms: Vec<AuthMechanism>,
     auth_state: AuthState,
     tls: TlsState,
-    smtp: Option<Box<dyn State>>,
+    smtp: Option<Box<dyn State + Send>>,
     auth_plain: bool,
 }
 
@@ -549,7 +549,7 @@ impl StateMachine {
     ) -> Either<Cmd<'a>, Response> {
         match self.smtp {
             Some(ref mut s) => {
-                let s: &mut dyn State = s.borrow_mut();
+                let s: &mut (dyn State + Send) = s.borrow_mut();
                 s.process_line(handler, line)
             }
             None => Right(INVALID_STATE),
