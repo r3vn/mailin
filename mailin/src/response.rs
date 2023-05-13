@@ -163,13 +163,19 @@ impl Response {
         Ok(())
     }
 
+    /// Returns a buffer containing the written response
+    pub fn buffer(&self) -> io::Result<Vec<u8>> {
+        let mut buf = Vec::new();
+        self.write_to(&mut buf)?;
+        Ok(buf)
+    }
+
     // Log the response
     pub(crate) fn log(&self) {
         match self.message {
             Message::Empty => (),
             _ => {
-                let mut buf = Vec::new();
-                let _ = self.write_to(&mut buf);
+                let buf = self.buffer().unwrap_or_default();
                 trace!("< {}", String::from_utf8_lossy(&buf));
             }
         }
