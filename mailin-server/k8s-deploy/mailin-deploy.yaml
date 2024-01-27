@@ -28,6 +28,7 @@ spec:
             - name: mailin
               mountPath: /mailin/maildir
             - name: certs
+              readOnly: true
               mountPath: /mailin/certs
           resources:
             limits:
