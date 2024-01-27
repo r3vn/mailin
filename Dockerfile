@@ -11,9 +11,9 @@ COPY --from=build-env /mailin /
 
 CMD ["./mailin-server", \
       "--address","0.0.0.0:8025", \
-      "--log /mailin/logs", \
-      "--maildir /mailin/maildir", \
-      "--ssl-cert /mailin/certs/tls.crt", \
-      "--ssl-key /mailin/certs/tls.key", \
-      "--blocklist zen.spamhaus.org" \
+      "--log","/mailin/logs", \
+      "--maildir","/mailin/maildir", \
+      "--ssl-cert","/mailin/certs/tls.crt", \
+      "--ssl-key","/mailin/certs/tls.key", \
+      "--blocklist","zen.spamhaus.org" \
     ]
