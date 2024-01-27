@@ -9,7 +9,7 @@ EXPOSE 8025
 COPY --from=build-env /app/target/release/mailin-server /
 COPY --from=build-env /mailin /
 
-CMD ["./mailin-server", \
+CMD ["/mailin-server", \
       "--address","0.0.0.0:8025", \
       "--log","/mailin/logs", \
       "--maildir","/mailin/maildir", \
