@@ -16,7 +16,9 @@ spec:
     - client auth
   # At least one of a DNS Name, URI, or IP address is required.
   dnsNames:
-    - mailtest.spamtastic.cc
+    - mail.spamtastic.cc
+    - mail.alienscience.org
+    - mail.alienscience.org.uk
   # Issuer references are always required.
   issuerRef:
     name: letsencrypt-staging
