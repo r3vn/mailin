@@ -1,5 +1,5 @@
 when:
-  branch: main
+  branch: master
   
 steps:
   test:
