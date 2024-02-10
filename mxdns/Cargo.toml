@@ -3,8 +3,7 @@ name = 'mxdns'
 version = "0.4.0"
 authors = ['alienscience <saul@alienscience.org.uk>']
 description = 'DNS utilities for SMTP servers'
-homepage = 'https://gitlab.com/alienscience/mailin'
-repository = 'https://gitlab.com/alienscience/mailin'
+repository = 'https://code.alienscience.org/alienscience/mailin'
 readme = 'README.md'
 keywords = [
     'dns',
@@ -22,7 +21,7 @@ edition = '2021'
 thiserror = '1'
 resolv-conf = '0.7'
 log = '0.4'
-smol = '1.2.5'
+smol = '2'
 pin-project-lite = '0.2'
 
 [dependencies.dnsclientx]

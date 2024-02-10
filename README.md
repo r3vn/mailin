@@ -4,6 +4,13 @@ This repository contains libraries for writing SMTP servers in Rust.
 
 Send an email to `mailin@spamtastic.cc` to try out an example server.
 
+## Housekeeping
+
+The project is hosted on [https://code.alienscience.org/alienscience/mailin](https://code.alienscience.org/alienscience/mailin), and is mirrored
+to [https://codeberg.org/al13nsc13nc3/mailin](https://codeberg.org/al13nsc13nc3/mailin).
+
+To create issues or PRs, login with your Github account.
+
 ## Directory structure
 
 ### mailin

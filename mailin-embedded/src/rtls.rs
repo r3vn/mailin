@@ -1,8 +1,7 @@
 use crate::ssl::{SslConfig, Stream};
 use crate::Error;
-use rustls::{
-    Certificate, Error as TLSError, PrivateKey, ServerConfig, ServerConnection, StreamOwned,
-};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::{Error as TLSError, ServerConfig, ServerConnection, StreamOwned};
 use std::fs;
 use std::io::BufReader;
 use std::net::TcpStream;
@@ -36,7 +35,6 @@ impl SslImpl {
                 certs.append(&mut chain);
                 let key = load_key(&key_path)?;
                 let config = ServerConfig::builder()
-                    .with_safe_defaults()
                     .with_no_client_auth()
                     .with_single_cert(certs, key)?;
                 Some(config)
@@ -48,7 +46,6 @@ impl SslImpl {
                 let certs = load_certs(&cert_path)?;
                 let key = load_key(&key_path)?;
                 let config = ServerConfig::builder()
-                    .with_safe_defaults()
                     .with_no_client_auth()
                     .with_single_cert(certs, key)?;
                 Some(config)
@@ -68,32 +65,21 @@ impl SslImpl {
     }
 }
 
-fn load_certs(filename: &str) -> Result<Vec<Certificate>, Error> {
+fn load_certs<'a>(filename: &'a str) -> Result<Vec<CertificateDer<'static>>, Error> {
     let certfile = fs::File::open(filename)?;
     let mut reader = BufReader::new(certfile);
-    let ret: Vec<Certificate> = rustls_pemfile::certs(&mut reader)
-        .map_err(|_| Error::new("Unparseable certificates"))?
-        .into_iter()
-        .map(Certificate)
-        .collect();
-    Ok(ret)
+    let ret: Result<Vec<_>, _> = rustls_pemfile::certs(&mut reader).collect();
+    ret.map_err(|_| Error::new("Unparseable certificates"))
 }
 
-fn load_key(filename: &str) -> Result<PrivateKey, Error> {
-    let keyfile = fs::File::open(filename)?;
-    let mut reader = BufReader::new(keyfile);
-    let rsa_keys = rustls_pemfile::rsa_private_keys(&mut reader)
-        .map_err(|_| Error::new("Unparseable RSA key"))?;
-    let keyfile = fs::File::open(filename)?;
-    let mut reader = BufReader::new(keyfile);
-    let pkcs8_keys = rustls_pemfile::pkcs8_private_keys(&mut reader)
-        .map_err(|_| Error::new("Unparseable PKCS8 key"))?;
-
+fn load_key<'a>(filename: &'a str) -> Result<PrivateKeyDer<'static>, Error> {
     // Prefer to load pkcs8 keys
-    pkcs8_keys
-        .first()
-        .or_else(|| rsa_keys.first())
-        .cloned()
-        .map(PrivateKey)
-        .ok_or_else(|| Error::new("No RSA or PKCS8 keys found"))
+    let keyfile = fs::File::open(filename)?;
+    let mut reader = BufReader::new(keyfile);
+    let Some(key) = rustls_pemfile::private_key(&mut reader)
+        .map_err(|_| Error::new("Unparseable PKCS8 key"))?
+    else {
+        return Err(Error::new("No private certificate keys found in pem"));
+    };
+    Ok(key)
 }
