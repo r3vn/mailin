@@ -1,5 +1,6 @@
 use nom::branch::alt;
 use nom::bytes::complete::{is_not, tag, tag_no_case, take_while1};
+use nom::character::complete::space0;
 use nom::character::is_alphanumeric;
 use nom::combinator::{map, map_res, value};
 use nom::sequence::{pair, preceded, separated_pair, terminated};
@@ -70,7 +71,8 @@ fn is8bitmime(buf: &[u8]) -> IResult<&[u8], bool> {
 }
 
 fn mail(buf: &[u8]) -> IResult<&[u8], Cmd> {
-    let preamble = pair(cmd(b"mail"), tag_no_case(b"from:<"));
+    let from = separated_pair(tag_no_case(b"from:"), space0, tag_no_case(b"<"));
+    let preamble = pair(cmd(b"mail"), from);
     let mail_path_parser = preceded(preamble, mail_path);
     let parser = separated_pair(mail_path_parser, tag(b">"), is8bitmime);
     map(parser, |r| Cmd::Mail {
@@ -80,7 +82,8 @@ fn mail(buf: &[u8]) -> IResult<&[u8], Cmd> {
 }
 
 fn rcpt(buf: &[u8]) -> IResult<&[u8], Cmd> {
-    let preamble = pair(cmd(b"rcpt"), tag_no_case(b"to:<"));
+    let to = separated_pair(tag_no_case(b"to:"), space0, tag_no_case(b"<"));
+    let preamble = pair(cmd(b"rcpt"), to);
     let mail_path_parser = preceded(preamble, mail_path);
     let parser = terminated(mail_path_parser, tag(b">"));
     map(parser, |path| Cmd::Rcpt { forward_path: path })(buf)
@@ -262,5 +265,31 @@ mod tests {
             Ok(Cmd::AuthLoginEmpty) => {}
             _ => panic!("Auth login without initial response incorrectly parsed"),
         };
+    }
+
+    fn test_mail_path(path: &[u8], expected: &str) {
+        let (_, cmd) = mail(path).unwrap();
+        let Cmd::Mail { reverse_path, .. } = cmd else {
+            assert!(false, "parse mail");
+            return;
+        };
+        assert_eq!(reverse_path, expected);
+    }
+
+    fn test_rcpt_path(path: &[u8], expected: &str) {
+        let (_, cmd) = rcpt(path).unwrap();
+        let Cmd::Rcpt { forward_path, .. } = cmd else {
+            assert!(false, "parse mail");
+            return;
+        };
+        assert_eq!(forward_path, expected);
+    }
+
+    #[test]
+    fn parse_mail_compatibility() {
+        test_mail_path(b"MAIL FROM: <test@mail.com>", "test@mail.com");
+        test_mail_path(b"MAIL FROM:<test@mail.com>", "test@mail.com");
+        test_rcpt_path(b"RCPT TO:<test@mail.com>", "test@mail.com");
+        test_rcpt_path(b"RCPT TO: <test@mail.com>", "test@mail.com");
     }
 }
