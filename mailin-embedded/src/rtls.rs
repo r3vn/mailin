@@ -65,14 +65,14 @@ impl SslImpl {
     }
 }
 
-fn load_certs<'a>(filename: &'a str) -> Result<Vec<CertificateDer<'static>>, Error> {
+fn load_certs(filename: &str) -> Result<Vec<CertificateDer<'static>>, Error> {
     let certfile = fs::File::open(filename)?;
     let mut reader = BufReader::new(certfile);
     let ret: Result<Vec<_>, _> = rustls_pemfile::certs(&mut reader).collect();
     ret.map_err(|_| Error::new("Unparseable certificates"))
 }
 
-fn load_key<'a>(filename: &'a str) -> Result<PrivateKeyDer<'static>, Error> {
+fn load_key(filename: &str) -> Result<PrivateKeyDer<'static>, Error> {
     // Prefer to load pkcs8 keys
     let keyfile = fs::File::open(filename)?;
     let mut reader = BufReader::new(keyfile);
