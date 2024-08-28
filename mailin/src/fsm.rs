@@ -575,10 +575,16 @@ pub(crate) struct StateMachine {
     smtp: Option<Box<dyn State>>,
     auth_plain: bool,
     auth_login: bool,
+    insecure_allow_plaintext_auth: bool,
 }
 
 impl StateMachine {
-    pub fn new(ip: IpAddr, auth_mechanisms: Vec<AuthMechanism>, allow_start_tls: bool) -> Self {
+    pub fn new(
+        ip: IpAddr,
+        auth_mechanisms: Vec<AuthMechanism>,
+        allow_start_tls: bool,
+        insecure_allow_plaintext_auth: bool,
+    ) -> Self {
         let auth_state = ternary!(
             auth_mechanisms.is_empty(),
             AuthState::Unavailable,
@@ -595,6 +601,7 @@ impl StateMachine {
             smtp: Some(Box::new(Idle {})),
             auth_plain,
             auth_login,
+            insecure_allow_plaintext_auth,
         }
     }
 
@@ -632,7 +639,9 @@ impl StateMachine {
         let mut extensions = vec!["8BITMIME".to_string()];
         if self.tls == TlsState::Inactive {
             extensions.push("STARTTLS".to_string());
-        } else if !self.auth_mechanisms.is_empty() {
+        }
+
+        if self.allow_auth() && !self.auth_mechanisms.is_empty() {
             let mut auth_available = "AUTH".to_string();
             for auth in &self.auth_mechanisms {
                 auth_available += " ";
@@ -644,10 +653,14 @@ impl StateMachine {
     }
 
     fn allow_auth_plain(&self) -> bool {
-        self.auth_plain && self.tls == TlsState::Active
+        self.auth_plain && self.allow_auth()
     }
 
     fn allow_auth_login(&self) -> bool {
-        self.auth_login && self.tls == TlsState::Active
+        self.auth_login && self.allow_auth()
+    }
+
+    fn allow_auth(&self) -> bool {
+        self.insecure_allow_plaintext_auth || (self.tls == TlsState::Active)
     }
 }

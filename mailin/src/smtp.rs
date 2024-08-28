@@ -85,6 +85,7 @@ pub struct Session<H: Handler> {
 pub struct SessionBuilder {
     name: String,
     start_tls_extension: bool,
+    insecure_allow_plaintext_auth: bool,
     auth_mechanisms: Vec<AuthMechanism>,
 }
 
@@ -94,6 +95,7 @@ impl SessionBuilder {
         Self {
             name: name.into(),
             start_tls_extension: false,
+            insecure_allow_plaintext_auth: false,
             auth_mechanisms: Vec::with_capacity(4),
         }
     }
@@ -110,6 +112,21 @@ impl SessionBuilder {
         self
     }
 
+    /// Allow authentication over plaintext and advertise authentication mechanisms before a connection
+    /// was upgraded to TLS with STARTTLS.
+    ///
+    /// This allows supporting non-compliant clients that either don't attempt STARTTLS if their
+    /// preferred authentication mechanism is not advertised before using STARTTLS or that don't
+    /// support TLS at all.
+    ///
+    /// Don't use this option if you don't know what you are doing and why it is fine to do in your
+    /// case, because this opens up the potential for clients to accidentally send credentials over
+    /// an insecure connection even if they actually support TLS.
+    pub fn insecure_enable_plaintext_auth(&mut self) -> &mut Self {
+        self.insecure_allow_plaintext_auth = true;
+        self
+    }
+
     /// Build a new session to handle a connection from the given ip address
     pub fn build<H: Handler>(&self, remote: IpAddr, handler: H) -> Session<H> {
         Session {
@@ -119,6 +136,7 @@ impl SessionBuilder {
                 remote,
                 self.auth_mechanisms.clone(),
                 self.start_tls_extension,
+                self.insecure_allow_plaintext_auth,
             ),
         }
     }
