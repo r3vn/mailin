@@ -3,7 +3,7 @@ when:
   
 steps:
   test:
-    image: rust
+    image: quay.io/instrumentisto/rust:slim
     environment: [CARGO_TERM_COLOR=always]
     commands:
       - cargo check
