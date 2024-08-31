@@ -3,12 +3,13 @@ when:
   
 steps:
   test:
-    image: quay.io/instrumentisto/rust
+    image: rust
     environment: [CARGO_TERM_COLOR=always]
     commands:
       - cargo check
-      - cargo clippy
       - cargo test
+      - rustup component add clippy
+      - cargo clippy
   docker:
     image: woodpeckerci/plugin-docker-buildx
     settings:
