@@ -9,7 +9,7 @@ steps:
       - cargo check
       - cargo test
       - rustup component add clippy
-      - cargo clippy
+      - cargo clippy -- -Dwarnings
   docker:
     image: woodpeckerci/plugin-docker-buildx
     settings:
