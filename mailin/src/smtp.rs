@@ -555,6 +555,34 @@ mod tests {
     }
 
     #[test]
+    fn auth_insecure_without_tls() {
+        let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let mut builder = SessionBuilder::new("some.domain");
+        builder.enable_auth(AuthMechanism::Plain);
+        builder.insecure_enable_plaintext_auth();
+        let mut session = builder.build(addr, AuthHandler {});
+        let mut res = session.process(b"ehlo a.domain\r\n");
+        assert_eq!(res.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::HelloAuth);
+        res = session.process(b"auth plain dGVzdAB0ZXN0ADEyMzQ=\r\n");
+        assert_eq!(res.code, 235);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
+    }
+
+    #[test]
+    fn auth_insecure_without_auth() {
+        let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let mut builder = SessionBuilder::new("some.domain");
+        builder.insecure_enable_plaintext_auth();
+        let mut session = builder.build(addr, AuthHandler {});
+        let mut res = session.process(b"ehlo a.domain\r\n");
+        assert_eq!(res.code, 250);
+        assert_state!(session.fsm.current_state(), SmtpState::Hello);
+        res = session.process(b"auth plain dGVzdAB0ZXN0ADEyMzQ=\r\n");
+        assert_eq!(res.code, 503);
+    }
+
+    #[test]
     fn bad_auth_plain_challenge() {
         let mut session = new_auth_session(true);
         start_tls(&mut session);
