@@ -1,8 +1,9 @@
 use nom::branch::alt;
+use nom::multi::many0;
 use nom::bytes::complete::{is_not, tag, tag_no_case, take_while1};
-use nom::character::is_alphanumeric;
-use nom::combinator::{map, map_res, value};
-use nom::sequence::{pair, preceded, separated_pair, terminated};
+use nom::character::{is_alphanumeric, complete::space0};
+use nom::combinator::{map, map_res, value, opt};
+use nom::sequence::{pair, preceded, terminated, delimited};
 use nom::IResult;
 
 use crate::response::*;
@@ -57,33 +58,73 @@ fn take_all(buf: &[u8]) -> IResult<&[u8], &str> {
 }
 
 fn body_eq_8bit(buf: &[u8]) -> IResult<&[u8], bool> {
-    let preamble = pair(space, tag_no_case(b"body="));
+    // Allow optional spaces before `BODY=`
+    let preamble = pair(space0, tag_no_case(b"body="));
+
+    // Match either `8BITMIME` or `7BIT`
     let is8bit = alt((
         value(true, tag_no_case(b"8bitmime")),
         value(false, tag_no_case(b"7bit")),
     ));
+
+    // Combine preamble with `is8bit` using `preceded`
     preceded(preamble, is8bit)(buf)
 }
 
 fn is8bitmime(buf: &[u8]) -> IResult<&[u8], bool> {
-    body_eq_8bit(buf).or(Ok((buf, false)))
+    if let Ok((remaining, result)) = body_eq_8bit(buf) {
+        Ok((remaining, result))
+    } else {
+        Ok((buf, false)) // No match, but don't consume
+    }
 }
 
 fn mail(buf: &[u8]) -> IResult<&[u8], Cmd> {
-    let preamble = pair(cmd(b"mail"), tag_no_case(b"from:<"));
-    let mail_path_parser = preceded(preamble, mail_path);
-    let parser = separated_pair(mail_path_parser, tag(b">"), is8bitmime);
-    map(parser, |r| Cmd::Mail {
-        reverse_path: r.0,
-        is8bit: r.1,
+    let preamble = preceded(
+        tag_no_case("mail from:"), // Match "MAIL FROM:" case-insensitively
+        many0(tag(" ")),           // Skip any spaces after "MAIL FROM:"
+    );
+
+    let email_parser = delimited(
+        tag("<"),
+        mail_path,
+        tag(">"),
+    );
+
+    let is8bitmime_parser = preceded(
+        many0(tag(" ")), // Allow optional spaces before BODY=
+        is8bitmime,
+    );
+
+    let parser = pair(
+        preceded(preamble, email_parser),
+        opt(is8bitmime_parser), // Optional BODY= clause
+    );
+
+    map(parser, |(email, is8bit)| Cmd::Mail {
+        reverse_path: email,
+        is8bit: is8bit.unwrap_or(false),
     })(buf)
 }
 
 fn rcpt(buf: &[u8]) -> IResult<&[u8], Cmd> {
-    let preamble = pair(cmd(b"rcpt"), tag_no_case(b"to:<"));
-    let mail_path_parser = preceded(preamble, mail_path);
-    let parser = terminated(mail_path_parser, tag(b">"));
-    map(parser, |path| Cmd::Rcpt { forward_path: path })(buf)
+    let preamble = preceded(
+        tag_no_case("rcpt to:"),
+        many0(tag(" ")),
+    );
+
+    let email_parser = delimited(
+        tag("<"),
+        mail_path,
+        tag(">"),
+    );
+
+    let parser = preceded(preamble, email_parser);
+
+    map(parser, |email_bytes| {
+        let path = email_bytes;
+        Cmd::Rcpt { forward_path: path }
+    })(buf)
 }
 
 fn data(buf: &[u8]) -> IResult<&[u8], Cmd> {
